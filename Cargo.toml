@@ -1,0 +1,18 @@
+[package]
+name = "brest"
+version = "0.1.0"
+edition = "2021"
+authors = ["Vero <veronoicc@proton.me>"]
+license = "BSD-3-Clause"
+documentation = "https://docs.rs/brest/latest/brest"
+repository = "https://github.com/veronoicc/brest"
+
+[package.metadata]
+msrv = "1.56.0"
+
+[package.metadata.docs.rs]
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+serde = { version = "1.*", features = ["derive"] }
+num-traits = "0.2"
