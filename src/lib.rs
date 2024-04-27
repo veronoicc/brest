@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase", rename_all_fields = "lowercase")]
+#[serde(tag = "type")]
 pub enum Brest<D, C = u32> where D: Serialize, C: num_traits::PrimInt + Serialize {
     Success {
         data: D
