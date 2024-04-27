@@ -27,30 +27,30 @@ impl<D, C> Brest<D, C> where D: Serialize, C: num_traits::PrimInt + Serialize {
         }
     }
 
-    pub fn error(message: String) -> Self {
+    pub fn error<M: ToString>(message: M) -> Self {
         Self::Error {
-            message,
+            message: message.to_string(),
             code: None
         }
     }
     
-    pub fn error_code(message: String, code: C) -> Self {
+    pub fn error_code<M: ToString>(message: M, code: C) -> Self {
         Self::Error {
-            message,
+            message: message.to_string(),
             code: Some(code)
         }
     }
 
-    pub fn fail(message: String) -> Self {
+    pub fn fail<M: ToString>(message: M) -> Self {
         Self::Fail {
-            message,
+            message: message.to_string(),
             code: None
         }
     }
 
-    pub fn fail_code(message: String, code: C) -> Self {
+    pub fn fail_code<M: ToString>(message: M, code: C) -> Self {
         Self::Fail {
-            message,
+            message: message.to_string(),
             code: Some(code)
         }
     }
