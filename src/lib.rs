@@ -7,8 +7,7 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "type")]
 pub enum Brest<D, C = u32>
 where
-    D: Serialize,
-    C: num_traits::PrimInt + Serialize,
+    C: num_traits::PrimInt,
 {
     Success(D),
     Error {
@@ -25,8 +24,7 @@ where
 
 impl<D, C> Brest<D, C>
 where
-    D: Serialize,
-    C: num_traits::PrimInt + Serialize,
+    C: num_traits::PrimInt,
 {
     pub fn success(data: D) -> Self {
         Self::Success(data)
@@ -63,8 +61,8 @@ where
 
 impl<D, C> Brest<D, C>
 where
-    D: Serialize + Debug,
-    C: num_traits::PrimInt + Serialize + Debug,
+    D: Debug,
+    C: num_traits::PrimInt + Debug,
 {
     #[inline]
     #[track_caller]
@@ -155,8 +153,8 @@ where
 
 impl<D, C> Brest<D, C>
 where
-    D: Serialize + Debug,
-    C: num_traits::PrimInt + Serialize + Debug,
+    D: Debug,
+    C: num_traits::PrimInt + Debug,
 {
     #[inline]
     #[track_caller]
@@ -198,8 +196,7 @@ fn unwrap_failed(msg: &str, error: &dyn fmt::Debug) -> ! {
 
 impl<D, C> Brest<D, C>
 where
-    D: Serialize,
-    C: num_traits::PrimInt + Serialize,
+    C: num_traits::PrimInt,
 {
     #[inline]
     #[must_use]
@@ -250,7 +247,7 @@ where
 #[derive(Debug, Clone, PartialEq)]
 pub struct ErrorFields<C>
 where
-    C: num_traits::PrimInt + Serialize,
+    C: num_traits::PrimInt,
 {
     pub message: String,
     pub code: Option<C>,
@@ -258,8 +255,7 @@ where
 
 impl<D, C, E> From<Result<D, E>> for Brest<D, C>
 where
-    D: Serialize,
-    C: num_traits::PrimInt + Serialize,
+    C: num_traits::PrimInt,
     E: Display,
 {
     fn from(value: Result<D, E>) -> Self {
@@ -272,8 +268,7 @@ where
 
 impl<D, C, E> From<(Result<D, E>, C)> for Brest<D, C>
 where
-    D: Serialize,
-    C: num_traits::PrimInt + Serialize,
+    C: num_traits::PrimInt,
     E: Display,
 {
     fn from(value: (Result<D, E>, C)) -> Self {
