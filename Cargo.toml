@@ -1,6 +1,6 @@
 [package]
 name = "brest"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 description = "Simple response format for web apis"
 authors = ["Vero <veronoicc@proton.me>"]
@@ -17,3 +17,9 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 serde = { version = "1.*", features = ["derive"] }
 num-traits = "0.2"
+
+#schemars
+schemars ={ version = "0.8", optional = true }
+
+[features]
+schemars = ["dep:schemars"]

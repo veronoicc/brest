@@ -2,7 +2,11 @@ use std::fmt::{self, Debug, Display};
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "schemars")]
+use schemars::JsonSchema;
+
 #[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(JsonSchema))]
 #[serde(rename_all = "lowercase", rename_all_fields = "lowercase")]
 #[serde(tag = "type")]
 pub enum Brest<D, C = u32>
