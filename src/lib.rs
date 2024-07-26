@@ -139,7 +139,7 @@ where
 
 impl<D, C, E> From<(Result<D, E>, C)> for Brest<D, C>
 where
-    E: Display,
+    E: ToString,
 {
     fn from(value: (Result<D, E>, C)) -> Self {
         match value.0 {
