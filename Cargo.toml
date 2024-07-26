@@ -16,10 +16,8 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 serde = { version = "1.*", features = ["derive"] }
-num-traits = "0.2"
-
-#schemars
 schemars ={ version = "0.8", optional = true }
 
 [features]
 schemars = ["dep:schemars"]
+try = []

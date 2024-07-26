@@ -1,3 +1,8 @@
+#![cfg_attr(feature = "try", feature(try_trait_v2))]
+
+#[cfg(feature = "try")]
+use std::{convert::Infallible, ops::FromResidual};
+
 use std::fmt::{Debug, Display};
 
 use serde::{Deserialize, Serialize};
@@ -9,8 +14,7 @@ use schemars::JsonSchema;
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 #[serde(rename_all = "lowercase", rename_all_fields = "lowercase")]
 #[serde(tag = "type")]
-pub enum Brest<D, C = u32>
-{
+pub enum Brest<D, C = u32> {
     Success(D),
     Error {
         message: String,
@@ -24,8 +28,7 @@ pub enum Brest<D, C = u32>
     },
 }
 
-impl<D, C> Brest<D, C>
-{
+impl<D, C> Brest<D, C> {
     pub fn success(data: D) -> Self {
         Self::Success(data)
     }
@@ -59,8 +62,7 @@ impl<D, C> Brest<D, C>
     }
 }
 
-impl<D, C> Brest<D, C>
-{
+impl<D, C> Brest<D, C> {
     #[inline]
     #[must_use]
     pub fn is_success(&self) -> bool {
@@ -108,8 +110,7 @@ impl<D, C> Brest<D, C>
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ErrorFields<C>
-{
+pub struct ErrorFields<C> {
     pub message: String,
     pub code: Option<C>,
 }
@@ -126,6 +127,16 @@ where
     }
 }
 
+#[cfg(feature = "try")]
+impl<D, E, C> FromResidual<Result<Infallible, E>> for Brest<D, C>
+where
+    E: ToString,
+{
+    fn from_residual(residual: Result<Infallible, E>) -> Self {
+        Self::error(residual.err().unwrap().to_string())
+    }
+}
+
 impl<D, C, E> From<(Result<D, E>, C)> for Brest<D, C>
 where
     E: Display,
@@ -135,5 +146,21 @@ where
             Ok(data) => Self::success(data),
             Err(error) => Self::error_code(error.to_string(), value.1),
         }
+    }
+}
+
+#[cfg(feature = "try")]
+impl<D, E, C> FromResidual<(Result<Infallible, E>, C)> for Brest<D, C>
+where
+    E: ToString,
+{
+    fn from_residual(residual: (Result<Infallible, E>, C)) -> Self {
+        Self::error_code(residual.0.err().unwrap().to_string(), residual.1)
+    }
+}
+
+impl<D, C> From<D> for Brest<D, C> {
+    fn from(value: D) -> Self {
+        Self::success(value)
     }
 }
