@@ -15,9 +15,10 @@ msrv = "1.56.0"
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-serde = { version = "1.*", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"], optional = true }
 schemars ={ version = "0.8", optional = true }
 
 [features]
 schemars = ["dep:schemars"]
 try = []
+serde = ["dep:serde"]

@@ -3,27 +3,27 @@
 #[cfg(feature = "try")]
 use std::{convert::Infallible, ops::FromResidual};
 
-use std::fmt::{Debug, Display};
-
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
-#[derive(Debug, Serialize, Deserialize)]
+use std::fmt::{Debug, Display};
+
+#[derive(Debug)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
-#[serde(rename_all = "lowercase", rename_all_fields = "lowercase")]
-#[serde(tag = "type")]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(rename_all = "lowercase", rename_all_fields = "lowercase", tag = "type"))]
 pub enum Brest<D, C = u32> {
     Success(D),
     Error {
         message: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
         code: Option<C>,
     },
     Fail {
         message: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
         code: Option<C>,
     },
 }
