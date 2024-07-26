@@ -1,4 +1,4 @@
-use std::fmt::{self, Debug, Display};
+use std::fmt::{Debug, Display};
 
 use serde::{Deserialize, Serialize};
 
@@ -10,8 +10,6 @@ use schemars::JsonSchema;
 #[serde(rename_all = "lowercase", rename_all_fields = "lowercase")]
 #[serde(tag = "type")]
 pub enum Brest<D, C = u32>
-where
-    C: num_traits::PrimInt,
 {
     Success(D),
     Error {
@@ -27,8 +25,6 @@ where
 }
 
 impl<D, C> Brest<D, C>
-where
-    C: num_traits::PrimInt,
 {
     pub fn success(data: D) -> Self {
         Self::Success(data)
@@ -64,143 +60,6 @@ where
 }
 
 impl<D, C> Brest<D, C>
-where
-    D: Debug,
-    C: num_traits::PrimInt + Debug,
-{
-    #[inline]
-    #[track_caller]
-    pub fn unwrap(self) -> D {
-        match self {
-            Self::Success(data) => data,
-            Self::Error { message, code } => unwrap_failed(
-                "called `RJSend::unwrap()` on an `Error` value",
-                &ErrorFields { message, code },
-            ),
-            Self::Fail { message, code } => unwrap_failed(
-                "called `RJSend::unwrap()` on a `Fail` value",
-                &ErrorFields { message, code },
-            ),
-        }
-    }
-
-    #[inline]
-    #[track_caller]
-    pub fn unwrap_error(self) -> ErrorFields<C> {
-        match self {
-            Self::Error { message, code } => ErrorFields { message, code },
-            Self::Success(data) => unwrap_failed(
-                "called `RJSend::unwrap_error()` on an `Success` value",
-                &data,
-            ),
-            Self::Fail { message, code } => unwrap_failed(
-                "called `RJSend::unwrap_error()` on a `Fail` value",
-                &ErrorFields { message, code },
-            ),
-        }
-    }
-
-    #[inline]
-    #[track_caller]
-    pub fn unwrap_fail(self) -> ErrorFields<C> {
-        match self {
-            Self::Fail { message, code } => ErrorFields { message, code },
-            Self::Error { message, code } => unwrap_failed(
-                "called `RJSend::unwrap_fail()` on a `Error` value",
-                &ErrorFields { message, code },
-            ),
-            Self::Success(data) => unwrap_failed(
-                "called `RJSend::unwrap_fail()` on an `Success` value",
-                &data,
-            ),
-        }
-    }
-
-    #[inline]
-    pub fn unwrap_or(self, default: D) -> D {
-        match self {
-            Self::Success(data) => data,
-            _ => default,
-        }
-    }
-
-    #[inline]
-    pub fn unwrap_or_else<F>(self, f: F) -> D
-    where
-        F: FnOnce() -> D,
-    {
-        match self {
-            Self::Success(data) => data,
-            _ => f(),
-        }
-    }
-
-    #[inline]
-    #[allow(renamed_and_removed_lints)]
-    #[allow(clippy::unwrap_or_else_default)]
-    pub fn unwrap_or_default(self) -> D
-    where
-        D: Default,
-    {
-        // NOTE: We need to add a linter exception here,
-        // because we are *not* using `std::option::Option`,
-        // or `std::result::Result` here,
-        // and actually *do* want to use `RJSend::unwrap_or_else` here,
-        // because we're implementing `RJSend::unwrap_or_default` here... xD
-        //
-        // Also, `unwrap_or_else_default` was quite recently renamed,
-        // making using the old name, and adding an exception to allow it,
-        // the easiest solution, whilst retaining the current implementation...
-        self.unwrap_or_else(Default::default)
-    }
-}
-
-impl<D, C> Brest<D, C>
-where
-    D: Debug,
-    C: num_traits::PrimInt + Debug,
-{
-    #[inline]
-    #[track_caller]
-    pub fn expect(self, msg: &str) -> D {
-        match self {
-            Self::Success(data) => data,
-            Self::Fail { message, code } => unwrap_failed(msg, &ErrorFields { message, code }),
-            Self::Error { message, code } => unwrap_failed(msg, &ErrorFields { message, code }),
-        }
-    }
-
-    #[inline]
-    #[track_caller]
-    pub fn expect_error(self, msg: &str) -> ErrorFields<C> {
-        match self {
-            Self::Error { message, code } => ErrorFields { message, code },
-            Self::Success(data) => unwrap_failed(msg, &data),
-            Self::Fail { message, code } => unwrap_failed(msg, &ErrorFields { message, code }),
-        }
-    }
-
-    #[inline]
-    #[track_caller]
-    pub fn expect_fail(self, msg: &str) -> ErrorFields<C> {
-        match self {
-            Self::Fail { message, code } => ErrorFields { message, code },
-            Self::Error { message, code } => unwrap_failed(msg, &ErrorFields { message, code }),
-            Self::Success(data) => unwrap_failed(msg, &data),
-        }
-    }
-}
-
-#[inline(never)]
-#[cold]
-#[track_caller]
-fn unwrap_failed(msg: &str, error: &dyn fmt::Debug) -> ! {
-    panic!("{}: {:?}", msg, error)
-}
-
-impl<D, C> Brest<D, C>
-where
-    C: num_traits::PrimInt,
 {
     #[inline]
     #[must_use]
@@ -250,29 +109,25 @@ where
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ErrorFields<C>
-where
-    C: num_traits::PrimInt,
 {
     pub message: String,
     pub code: Option<C>,
 }
 
-impl<D, C, E> From<Result<D, E>> for Brest<D, C>
+impl<D, E, C> From<Result<D, E>> for Brest<D, C>
 where
-    C: num_traits::PrimInt,
-    E: Display,
+    E: ToString,
 {
     fn from(value: Result<D, E>) -> Self {
         match value {
             Ok(data) => Self::success(data),
-            Err(error) => Self::error(error.to_string()),
+            Err(error) => Self::error(error),
         }
     }
 }
 
 impl<D, C, E> From<(Result<D, E>, C)> for Brest<D, C>
 where
-    C: num_traits::PrimInt,
     E: Display,
 {
     fn from(value: (Result<D, E>, C)) -> Self {
