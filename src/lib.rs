@@ -11,7 +11,7 @@ use schemars::JsonSchema;
 
 use std::fmt::Debug;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(rename_all = "lowercase", rename_all_fields = "lowercase", tag = "type", content = "data"))]
 pub enum Brest<D = (), C = u32> {
