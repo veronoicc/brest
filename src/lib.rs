@@ -14,7 +14,7 @@ use std::fmt::Debug;
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(rename_all = "lowercase", rename_all_fields = "lowercase", tag = "type", content = "data"))]
-pub enum Brest<D: Clone = (), C: Clone = u32> {
+pub enum Brest<D = (), C = u32> {
     Success(D),
     Error {
         message: String,
@@ -28,7 +28,7 @@ pub enum Brest<D: Clone = (), C: Clone = u32> {
     },
 }
 
-impl<D: Clone, C: Clone> Brest<D, C> {
+impl<D, C> Brest<D, C> {
     pub fn success(data: D) -> Self {
         Self::Success(data)
     }
@@ -62,7 +62,7 @@ impl<D: Clone, C: Clone> Brest<D, C> {
     }
 }
 
-impl<D: Clone, C: Clone> Brest<D, C> {
+impl<D, C> Brest<D, C> {
     #[inline]
     #[must_use]
     pub fn is_success(&self) -> bool {
@@ -115,7 +115,7 @@ pub struct ErrorFields<C> {
     pub code: Option<C>,
 }
 
-impl<D: Clone, E, C: Clone> From<Result<D, E>> for Brest<D, C>
+impl<D, E, C> From<Result<D, E>> for Brest<D, C>
 where
     E: ToString,
 {
@@ -128,7 +128,7 @@ where
 }
 
 #[cfg(feature = "try")]
-impl<D: Clone, E, C: Clone> FromResidual<Result<Infallible, E>> for Brest<D, C>
+impl<D, E, C> FromResidual<Result<Infallible, E>> for Brest<D, C>
 where
     E: ToString,
 {
@@ -137,7 +137,7 @@ where
     }
 }
 
-impl<D: Clone, C: Clone, E> From<(Result<D, E>, C)> for Brest<D, C>
+impl<D, C, E> From<(Result<D, E>, C)> for Brest<D, C>
 where
     E: ToString,
 {
@@ -150,7 +150,7 @@ where
 }
 
 #[cfg(feature = "try")]
-impl<D: Clone, E, C: Clone> FromResidual<(Result<Infallible, E>, C)> for Brest<D, C>
+impl<D, E, C> FromResidual<(Result<Infallible, E>, C)> for Brest<D, C>
 where
     E: ToString,
 {
@@ -159,7 +159,7 @@ where
     }
 }
 
-impl<D: Clone, C: Clone> From<D> for Brest<D, C> {
+impl<D, C> From<D> for Brest<D, C> {
     fn from(value: D) -> Self {
         Self::success(value)
     }
