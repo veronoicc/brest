@@ -1,13 +1,16 @@
 #![cfg_attr(feature = "try", feature(try_trait_v2))]
 
 #[cfg(feature = "try")]
-use std::{convert::Infallible, ops::FromResidual};
+use std::ops::FromResidual;
 
+#[cfg(feature = "axum")]
+use axum::{http::StatusCode, response::IntoResponse};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
+
 
 use std::fmt::Debug;
 
@@ -15,28 +18,41 @@ use std::fmt::Debug;
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(rename_all = "lowercase", rename_all_fields = "lowercase", tag = "type", content = "data"))]
 pub enum Brest<D = (), C = u32> {
-    Success(D),
+    Success(D, #[cfg(feature = "axum")] #[serde(skip)] StatusCode),
     Error {
         message: String,
         #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
         code: Option<C>,
+        #[cfg(feature = "axum")]
+        #[serde(skip)]
+        status: StatusCode,
     },
     Fail {
         message: String,
         #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
         code: Option<C>,
+        #[cfg(feature = "axum")]
+        #[serde(skip)]
+        status: StatusCode,
     },
 }
 
 impl<D, C> Brest<D, C> {
     pub fn success(data: D) -> Self {
-        Self::Success(data)
+        Self::Success(data, #[cfg(feature = "axum")] StatusCode::OK)
+    }
+
+    #[cfg(feature = "axum")]
+    pub fn success_status(data: D, status: StatusCode) -> Self {
+        Self::Success(data, status)
     }
 
     pub fn error<M: ToString>(message: M) -> Self {
         Self::Error {
             message: message.to_string(),
             code: None,
+            #[cfg(feature = "axum")]
+            status: StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 
@@ -44,6 +60,17 @@ impl<D, C> Brest<D, C> {
         Self::Error {
             message: message.to_string(),
             code: Some(code),
+            #[cfg(feature = "axum")]
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+
+    #[cfg(feature = "axum")]
+    pub fn error_code_status<M: ToString>(message: M, code: C, status: StatusCode) -> Self {
+        Self::Error {
+            message: message.to_string(),
+            code: Some(code),
+            status,
         }
     }
 
@@ -51,6 +78,8 @@ impl<D, C> Brest<D, C> {
         Self::Fail {
             message: message.to_string(),
             code: None,
+            #[cfg(feature = "axum")]
+            status: StatusCode::BAD_REQUEST,
         }
     }
 
@@ -58,6 +87,18 @@ impl<D, C> Brest<D, C> {
         Self::Fail {
             message: message.to_string(),
             code: Some(code),
+            #[cfg(feature = "axum")]
+            status: StatusCode::BAD_REQUEST,
+        }
+    }
+
+    #[cfg(feature = "axum")]
+    pub fn fail_code_status<M: ToString>(message: M, code: C, status: StatusCode) -> Self {
+        Self::Fail {
+            message: message.to_string(),
+            code: Some(code),
+            #[cfg(feature = "axum")]
+            status,
         }
     }
 }
@@ -73,6 +114,9 @@ impl<D, C> Brest<D, C> {
     #[must_use]
     pub fn is_success_and<F: FnOnce(D) -> bool>(self, f: F) -> bool {
         match self {
+            #[cfg(feature = "axum")]
+            Self::Success(data, _) => f(data),
+            #[cfg(not(feature = "axum"))]
             Self::Success(data) => f(data),
             _ => false,
         }
@@ -88,6 +132,9 @@ impl<D, C> Brest<D, C> {
     #[must_use]
     pub fn is_fail_and<F: FnOnce(ErrorFields<C>) -> bool>(self, f: F) -> bool {
         match self {
+            #[cfg(feature = "axum")]
+            Self::Fail { message, code, status } => f(ErrorFields { message, code, status }),
+            #[cfg(not(feature = "axum"))]
             Self::Fail { message, code } => f(ErrorFields { message, code }),
             _ => false,
         }
@@ -103,6 +150,9 @@ impl<D, C> Brest<D, C> {
     #[must_use]
     pub fn is_error_and<F: FnOnce(ErrorFields<C>) -> bool>(self, f: F) -> bool {
         match self {
+            #[cfg(feature = "axum")]
+            Self::Error { message, code, status } => f(ErrorFields { message, code, status }),
+            #[cfg(not(feature = "axum"))]
             Self::Error { message, code } => f(ErrorFields { message, code }),
             _ => false,
         }
@@ -113,6 +163,8 @@ impl<D, C> Brest<D, C> {
 pub struct ErrorFields<C> {
     pub message: String,
     pub code: Option<C>,
+    #[cfg(feature = "axum")]
+    pub status: StatusCode,
 }
 
 impl<D, E, C> From<Result<D, E>> for Brest<D, C>
@@ -128,11 +180,11 @@ where
 }
 
 #[cfg(feature = "try")]
-impl<D, E, C> FromResidual<Result<Infallible, E>> for Brest<D, C>
+impl<D, E, C> FromResidual<Result<D, E>> for Brest<D, C>
 where
     E: ToString,
 {
-    fn from_residual(residual: Result<Infallible, E>) -> Self {
+    fn from_residual(residual: Result<D, E>) -> Self {
         Self::error(residual.err().unwrap().to_string())
     }
 }
@@ -150,17 +202,55 @@ where
 }
 
 #[cfg(feature = "try")]
-impl<D, E, C> FromResidual<(Result<Infallible, E>, C)> for Brest<D, C>
+impl<D, E, C> FromResidual<(Result<D, E>, C)> for Brest<D, C>
 where
     E: ToString,
 {
-    fn from_residual(residual: (Result<Infallible, E>, C)) -> Self {
+    fn from_residual(residual: (Result<D, E>, C)) -> Self {
         Self::error_code(residual.0.err().unwrap().to_string(), residual.1)
+    }
+}
+
+#[cfg(feature = "axum")]
+impl<D, C, S, E> From<(Result<D, E>, C, S)> for Brest<D, C>
+where
+    E: ToString,
+    S: Into<StatusCode>,
+{
+    fn from(value: (Result<D, E>, C, S)) -> Self {
+        match value.0 {
+            Ok(data) => Self::success(data),
+            Err(error) => Self::error_code_status(error.to_string(), value.1, value.2.into()),
+        }
+    }
+}
+
+#[cfg(all(feature = "try", feature = "axum"))]
+impl<D, E, S, C> FromResidual<(Result<D, E>, C, S)> for Brest<D, C>
+where
+    E: ToString,
+    S: Into<StatusCode>,
+{
+    fn from_residual(residual: (Result<D, E>, C, S)) -> Self {
+        Self::error_code_status(residual.0.err().unwrap().to_string(), residual.1, residual.2.into())
     }
 }
 
 impl<D, C> From<D> for Brest<D, C> {
     fn from(value: D) -> Self {
         Self::success(value)
+    }
+}
+
+#[cfg(all(feature = "axum", feature = "serde"))]
+impl<D, C> IntoResponse for Brest<D, C> where D: Serialize, C: Serialize {
+    fn into_response(self) -> axum::response::Response {
+        use axum::Json;
+
+        match &self {
+            Self::Success(_, status) => (*status, Json(self)).into_response(),
+            Self::Error { status, .. } => (*status, Json(self)).into_response(),
+            Self::Fail { status, .. } => (*status, Json(self)).into_response(),
+        }
     }
 }
