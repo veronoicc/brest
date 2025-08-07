@@ -254,3 +254,11 @@ impl<D, C> IntoResponse for Brest<D, C> where D: Serialize, C: Serialize {
         }
     }
 }
+
+#[cfg(feature = "try")]
+impl<D, C, U> FromResidual<Result<U, Self>> for Brest<D, C>
+{
+    fn from_residual(residual: Result<U, Self>) -> Self {
+        residual.err().unwrap()
+    }
+}
