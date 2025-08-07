@@ -9,7 +9,10 @@ use std::ops::FromResidual;
 #[cfg(feature = "axum")]
 use axum::{http::StatusCode, response::IntoResponse};
 #[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
+use serde::{
+    ser::{SerializeStruct, Serializer},
+    Deserialize, Serialize,
+};
 
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
@@ -325,15 +328,46 @@ impl<D, C> From<D> for Brest<D, C> {
 }
 
 #[cfg(all(feature = "axum", feature = "serde"))]
-impl<D, C> IntoResponse for Brest<D, C> where D: Serialize, C: Serialize {
+struct BrestResponse<D, C>(Brest<D, C>);
+
+#[cfg(all(feature = "axum", feature = "serde"))]
+impl<D, C> Serialize for BrestResponse<D, C>
+where
+    D: Serialize + 'static,
+    C: Serialize,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match &self.0 {
+            Brest::Success(data, _) if std::any::TypeId::of::<D>() == std::any::TypeId::of::<()>() => {
+                let mut s = serializer.serialize_struct("Brest", 2)?;
+                s.serialize_field("type", "success")?;
+                s.serialize_field("data", &())?;
+                s.end()
+            }
+            _ => self.0.serialize(serializer),
+        }
+    }
+}
+
+#[cfg(all(feature = "axum", feature = "serde"))]
+impl<D, C> IntoResponse for Brest<D, C>
+where
+    D: Serialize + 'static,
+    C: Serialize,
+{
     fn into_response(self) -> axum::response::Response {
         use axum::Json;
 
-        match &self {
-            Self::Success(_, status) => (*status, Json(self)).into_response(),
-            Self::Error { status, .. } => (*status, Json(self)).into_response(),
-            Self::Fail { status, .. } => (*status, Json(self)).into_response(),
-        }
+        let status = match &self {
+            Self::Success(_, status) => *status,
+            Self::Error { status, .. } => *status,
+            Self::Fail { status, .. } => *status,
+        };
+
+        (status, Json(BrestResponse(self))).into_response()
     }
 }
 
