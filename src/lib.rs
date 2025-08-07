@@ -1,6 +1,9 @@
 #![cfg_attr(feature = "try", feature(try_trait_v2))]
 
 #[cfg(feature = "try")]
+use std::ops::{ControlFlow, FromResidual, Try};
+#[cfg(not(feature = "try"))]
+#[cfg(feature = "try")]
 use std::ops::FromResidual;
 
 #[cfg(feature = "axum")]
@@ -186,6 +189,85 @@ where
 {
     fn from_residual(residual: Result<D, E>) -> Self {
         Self::error(residual.err().unwrap().to_string())
+    }
+}
+
+#[cfg(feature = "try")]
+impl<D, C> Try for Brest<D, C> {
+    type Output = D;
+    type Residual = Brest<(), C>;
+
+    fn from_output(output: Self::Output) -> Self {
+        Self::success(output)
+    }
+
+    fn branch(self) -> ControlFlow<Self::Residual, Self::Output> {
+        match self {
+            #[cfg(feature = "axum")]
+            Brest::Success(data, _) => ControlFlow::Continue(data),
+            #[cfg(not(feature = "axum"))]
+            Brest::Success(data) => ControlFlow::Continue(data),
+            #[cfg(feature = "axum")]
+            Brest::Error {
+                message,
+                code,
+                status,
+            } => ControlFlow::Break(Brest::Error {
+                message,
+                code,
+                status,
+            }),
+            #[cfg(not(feature = "axum"))]
+            Brest::Error { message, code } => ControlFlow::Break(Brest::Error { message, code }),
+            #[cfg(feature = "axum")]
+            Brest::Fail {
+                message,
+                code,
+                status,
+            } => ControlFlow::Break(Brest::Fail {
+                message,
+                code,
+                status,
+            }),
+            #[cfg(not(feature = "axum"))]
+            Brest::Fail { message, code } => ControlFlow::Break(Brest::Fail { message, code }),
+        }
+    }
+}
+
+#[cfg(feature = "try")]
+impl<D, C> FromResidual<Brest<(), C>> for Brest<D, C> {
+    fn from_residual(residual: Brest<(), C>) -> Self {
+        match residual {
+            #[cfg(feature = "axum")]
+            Brest::Success(_, _) => unreachable!(),
+            #[cfg(not(feature = "axum"))]
+            Brest::Success(_) => unreachable!(),
+            #[cfg(feature = "axum")]
+            Brest::Error {
+                message,
+                code,
+                status,
+            } => Brest::Error {
+                message,
+                code,
+                status,
+            },
+            #[cfg(not(feature = "axum"))]
+            Brest::Error { message, code } => Brest::Error { message, code },
+            #[cfg(feature = "axum")]
+            Brest::Fail {
+                message,
+                code,
+                status,
+            } => Brest::Fail {
+                message,
+                code,
+                status,
+            },
+            #[cfg(not(feature = "axum"))]
+            Brest::Fail { message, code } => Brest::Fail { message, code },
+        }
     }
 }
 
