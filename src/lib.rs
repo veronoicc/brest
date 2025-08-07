@@ -24,7 +24,12 @@ use std::fmt::Debug;
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(rename_all = "lowercase", rename_all_fields = "lowercase", tag = "type", content = "data"))]
 pub enum Brest<D = (), C = u32> {
-    Success(D, #[cfg(feature = "axum")] #[serde(skip)] StatusCode),
+    Success {
+        data: D,
+        #[cfg(feature = "axum")]
+        #[serde(skip)]
+        status: StatusCode,
+    },
     Error {
         message: String,
         #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
@@ -45,12 +50,16 @@ pub enum Brest<D = (), C = u32> {
 
 impl<D, C> Brest<D, C> {
     pub fn success(data: D) -> Self {
-        Self::Success(data, #[cfg(feature = "axum")] StatusCode::OK)
+        Self::Success {
+            data,
+            #[cfg(feature = "axum")]
+            status: StatusCode::OK,
+        }
     }
 
     #[cfg(feature = "axum")]
     pub fn success_status(data: D, status: StatusCode) -> Self {
-        Self::Success(data, status)
+        Self::Success { data, status }
     }
 
     pub fn error<M: ToString>(message: M) -> Self {
@@ -120,10 +129,7 @@ impl<D, C> Brest<D, C> {
     #[must_use]
     pub fn is_success_and<F: FnOnce(D) -> bool>(self, f: F) -> bool {
         match self {
-            #[cfg(feature = "axum")]
-            Self::Success(data, _) => f(data),
-            #[cfg(not(feature = "axum"))]
-            Self::Success(data) => f(data),
+            Self::Success { data, .. } => f(data),
             _ => false,
         }
     }
@@ -206,10 +212,7 @@ impl<D, C> Try for Brest<D, C> {
 
     fn branch(self) -> ControlFlow<Self::Residual, Self::Output> {
         match self {
-            #[cfg(feature = "axum")]
-            Brest::Success(data, _) => ControlFlow::Continue(data),
-            #[cfg(not(feature = "axum"))]
-            Brest::Success(data) => ControlFlow::Continue(data),
+            Brest::Success { data, .. } => ControlFlow::Continue(data),
             #[cfg(feature = "axum")]
             Brest::Error {
                 message,
@@ -242,10 +245,7 @@ impl<D, C> Try for Brest<D, C> {
 impl<D, C> FromResidual<Brest<(), C>> for Brest<D, C> {
     fn from_residual(residual: Brest<(), C>) -> Self {
         match residual {
-            #[cfg(feature = "axum")]
-            Brest::Success(_, _) => unreachable!(),
-            #[cfg(not(feature = "axum"))]
-            Brest::Success(_) => unreachable!(),
+            Brest::Success { .. } => unreachable!(),
             #[cfg(feature = "axum")]
             Brest::Error {
                 message,
@@ -341,7 +341,7 @@ where
         S: Serializer,
     {
         match &self.0 {
-            Brest::Success(data, _) if std::any::TypeId::of::<D>() == std::any::TypeId::of::<()>() => {
+            Brest::Success { data, .. } if std::any::TypeId::of::<D>() == std::any::TypeId::of::<()>() => {
                 let mut s = serializer.serialize_struct("Brest", 2)?;
                 s.serialize_field("type", "success")?;
                 s.serialize_field("data", &())?;
@@ -362,7 +362,7 @@ where
         use axum::Json;
 
         let status = match &self {
-            Self::Success(_, status) => *status,
+            Self::Success { status, .. } => *status,
             Self::Error { status, .. } => *status,
             Self::Fail { status, .. } => *status,
         };
