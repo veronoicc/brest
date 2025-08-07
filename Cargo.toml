@@ -1,6 +1,6 @@
 [package]
 name = "brest"
-version = "0.1.5"
+version = "0.2.0"
 edition = "2021"
 description = "Simple response format for web apis"
 authors = ["Vero <veronoicc@proton.me>"]

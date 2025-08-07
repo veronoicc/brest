@@ -1,28 +1,33 @@
 #![cfg_attr(feature = "try", feature(try_trait_v2))]
 
-#[cfg(feature = "try")]
-use std::ops::{ControlFlow, FromResidual, Try};
 #[cfg(not(feature = "try"))]
 #[cfg(feature = "try")]
 use std::ops::FromResidual;
+#[cfg(feature = "try")]
+use std::ops::{ControlFlow, FromResidual, Try};
 
 #[cfg(feature = "axum")]
 use axum::{http::StatusCode, response::IntoResponse};
 #[cfg(feature = "serde")]
-use serde::{
-    ser::{SerializeStruct, Serializer},
-    Deserialize, Serialize,
-};
+use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
-
 
 use std::fmt::Debug;
 
 #[derive(Debug)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize), serde(rename_all = "lowercase", rename_all_fields = "lowercase", tag = "type", content = "data"))]
+#[cfg_attr(
+    feature = "serde",
+    derive(Serialize, Deserialize),
+    serde(
+        rename_all = "lowercase",
+        rename_all_fields = "lowercase",
+        tag = "type",
+        content = "data"
+    )
+)]
 pub enum Brest<D = (), C = u32> {
     Success {
         #[serde(flatten)]
@@ -146,7 +151,15 @@ impl<D, C> Brest<D, C> {
     pub fn is_fail_and<F: FnOnce(ErrorFields<C>) -> bool>(self, f: F) -> bool {
         match self {
             #[cfg(feature = "axum")]
-            Self::Fail { message, code, status } => f(ErrorFields { message, code, status }),
+            Self::Fail {
+                message,
+                code,
+                status,
+            } => f(ErrorFields {
+                message,
+                code,
+                status,
+            }),
             #[cfg(not(feature = "axum"))]
             Self::Fail { message, code } => f(ErrorFields { message, code }),
             _ => false,
@@ -164,7 +177,15 @@ impl<D, C> Brest<D, C> {
     pub fn is_error_and<F: FnOnce(ErrorFields<C>) -> bool>(self, f: F) -> bool {
         match self {
             #[cfg(feature = "axum")]
-            Self::Error { message, code, status } => f(ErrorFields { message, code, status }),
+            Self::Error {
+                message,
+                code,
+                status,
+            } => f(ErrorFields {
+                message,
+                code,
+                status,
+            }),
             #[cfg(not(feature = "axum"))]
             Self::Error { message, code } => f(ErrorFields { message, code }),
             _ => false,
@@ -318,7 +339,11 @@ where
     S: Into<StatusCode>,
 {
     fn from_residual(residual: (Result<D, E>, C, S)) -> Self {
-        Self::error_code_status(residual.0.err().unwrap().to_string(), residual.1, residual.2.into())
+        Self::error_code_status(
+            residual.0.err().unwrap().to_string(),
+            residual.1,
+            residual.2.into(),
+        )
     }
 }
 
@@ -390,8 +415,7 @@ where
 }
 
 #[cfg(feature = "try")]
-impl<D, C, U> FromResidual<Result<U, Self>> for Brest<D, C>
-{
+impl<D, C, U> FromResidual<Result<U, Self>> for Brest<D, C> {
     fn from_residual(residual: Result<U, Self>) -> Self {
         residual.err().unwrap()
     }
