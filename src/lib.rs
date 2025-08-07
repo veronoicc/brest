@@ -341,15 +341,32 @@ where
     where
         S: Serializer,
     {
+        let mut s = serializer.serialize_struct("Brest", 2)?;
         match &self.0 {
-            Brest::Success { data, .. } if std::any::TypeId::of::<D>() == std::any::TypeId::of::<()>() => {
-                let mut s = serializer.serialize_struct("Brest", 2)?;
+            Brest::Success { data, .. } => {
                 s.serialize_field("type", "success")?;
-                s.serialize_field("data", &())?;
-                s.end()
+                if std::any::TypeId::of::<D>() == std::any::TypeId::of::<()>() {
+                    s.serialize_field("data", &())?;
+                } else {
+                    s.serialize_field("data", data)?;
+                }
             }
-            _ => self.0.serialize(serializer),
+            Brest::Error { message, code, .. } => {
+                s.serialize_field("type", "error")?;
+                s.serialize_field("message", message)?;
+                if let Some(c) = code {
+                    s.serialize_field("code", c)?;
+                }
+            }
+            Brest::Fail { message, code, .. } => {
+                s.serialize_field("type", "fail")?;
+                s.serialize_field("message", message)?;
+                if let Some(c) = code {
+                    s.serialize_field("code", c)?;
+                }
+            }
         }
+        s.end()
     }
 }
 
