@@ -1,34 +1,28 @@
 #![cfg_attr(feature = "try", feature(try_trait_v2))]
 
-#[cfg(not(feature = "try"))]
-#[cfg(feature = "try")]
-use std::ops::FromResidual;
 #[cfg(feature = "try")]
 use std::ops::{ControlFlow, FromResidual, Try};
 
 #[cfg(feature = "axum")]
 use axum::{http::StatusCode, response::IntoResponse};
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
+
+use serde::{Deserialize, Serialize, Serializer, ser::SerializeStruct as _};
 
 use std::fmt::Debug;
 
 #[derive(Debug)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
-#[cfg_attr(
-    feature = "serde",
-    derive(Serialize, Deserialize),
-    serde(
-        rename_all = "lowercase",
-        rename_all_fields = "lowercase",
-        tag = "type",
-        content = "data"
-    )
+#[derive(Serialize, Deserialize)]
+#[serde(
+    rename_all = "lowercase",
+    rename_all_fields = "lowercase",
+    tag = "type",
+    content = "data"
 )]
-pub enum Brest<D = (), C = u32> {
+pub enum Brest<D: Serialize = (), C = u32> {
     Success {
         #[serde(flatten)]
         data: D,
@@ -38,7 +32,7 @@ pub enum Brest<D = (), C = u32> {
     },
     Error {
         message: String,
-        #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+        #[serde(skip_serializing_if = "Option::is_none")]
         code: Option<C>,
         #[cfg(feature = "axum")]
         #[serde(skip)]
@@ -46,7 +40,7 @@ pub enum Brest<D = (), C = u32> {
     },
     Fail {
         message: String,
-        #[cfg_attr(feature = "serde", serde(skip_serializing_if = "Option::is_none"))]
+        #[serde(skip_serializing_if = "Option::is_none")]
         code: Option<C>,
         #[cfg(feature = "axum")]
         #[serde(skip)]
@@ -54,7 +48,7 @@ pub enum Brest<D = (), C = u32> {
     },
 }
 
-impl<D, C> Brest<D, C> {
+impl<D: Serialize, C> Brest<D, C> {
     pub fn success(data: D) -> Self {
         Self::Success {
             data,
@@ -124,7 +118,7 @@ impl<D, C> Brest<D, C> {
     }
 }
 
-impl<D, C> Brest<D, C> {
+impl<D: Serialize, C> Brest<D, C> {
     #[inline]
     #[must_use]
     pub fn is_success(&self) -> bool {
@@ -201,7 +195,7 @@ pub struct ErrorFields<C> {
     pub status: StatusCode,
 }
 
-impl<D, E, C> From<Result<D, E>> for Brest<D, C>
+impl<D: Serialize, E, C> From<Result<D, E>> for Brest<D, C>
 where
     E: ToString,
 {
@@ -214,7 +208,7 @@ where
 }
 
 #[cfg(feature = "try")]
-impl<D, E, C> FromResidual<Result<D, E>> for Brest<D, C>
+impl<D: Serialize, E, C> FromResidual<Result<D, E>> for Brest<D, C>
 where
     E: ToString,
 {
@@ -224,7 +218,7 @@ where
 }
 
 #[cfg(feature = "try")]
-impl<D, C> Try for Brest<D, C> {
+impl<D: Serialize, C> Try for Brest<D, C> {
     type Output = D;
     type Residual = Brest<(), C>;
 
@@ -264,7 +258,7 @@ impl<D, C> Try for Brest<D, C> {
 }
 
 #[cfg(feature = "try")]
-impl<D, C> FromResidual<Brest<(), C>> for Brest<D, C> {
+impl<D: Serialize, C> FromResidual<Brest<(), C>> for Brest<D, C> {
     fn from_residual(residual: Brest<(), C>) -> Self {
         match residual {
             Brest::Success { .. } => unreachable!(),
@@ -296,7 +290,7 @@ impl<D, C> FromResidual<Brest<(), C>> for Brest<D, C> {
     }
 }
 
-impl<D, C, E> From<(Result<D, E>, C)> for Brest<D, C>
+impl<D: Serialize, C, E> From<(Result<D, E>, C)> for Brest<D, C>
 where
     E: ToString,
 {
@@ -309,7 +303,7 @@ where
 }
 
 #[cfg(feature = "try")]
-impl<D, E, C> FromResidual<(Result<D, E>, C)> for Brest<D, C>
+impl<D: Serialize, E, C> FromResidual<(Result<D, E>, C)> for Brest<D, C>
 where
     E: ToString,
 {
@@ -319,7 +313,7 @@ where
 }
 
 #[cfg(feature = "axum")]
-impl<D, C, S, E> From<(Result<D, E>, C, S)> for Brest<D, C>
+impl<D: Serialize, C, S, E> From<(Result<D, E>, C, S)> for Brest<D, C>
 where
     E: ToString,
     S: Into<StatusCode>,
@@ -333,7 +327,7 @@ where
 }
 
 #[cfg(all(feature = "try", feature = "axum"))]
-impl<D, E, S, C> FromResidual<(Result<D, E>, C, S)> for Brest<D, C>
+impl<D: Serialize, E, S, C> FromResidual<(Result<D, E>, C, S)> for Brest<D, C>
 where
     E: ToString,
     S: Into<StatusCode>,
@@ -347,21 +341,17 @@ where
     }
 }
 
-impl<D, C> From<D> for Brest<D, C> {
+impl<D: Serialize, C> From<D> for Brest<D, C> {
     fn from(value: D) -> Self {
         Self::success(value)
     }
 }
 
-#[cfg(all(feature = "axum", feature = "serde"))]
-struct BrestResponse<D, C>(Brest<D, C>);
+#[cfg(all(feature = "axum"))]
+struct BrestResponse<D: Serialize, C>(Brest<D, C>);
 
-#[cfg(all(feature = "axum", feature = "serde"))]
-impl<D, C> Serialize for BrestResponse<D, C>
-where
-    D: Serialize + 'static,
-    C: Serialize,
-{
+#[cfg(all(feature = "axum"))]
+impl<D: Serialize + 'static, C: Serialize> Serialize for BrestResponse<D, C> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -395,12 +385,8 @@ where
     }
 }
 
-#[cfg(all(feature = "axum", feature = "serde"))]
-impl<D, C> IntoResponse for Brest<D, C>
-where
-    D: Serialize + 'static,
-    C: Serialize,
-{
+#[cfg(all(feature = "axum"))]
+impl<D: Serialize + 'static, C: Serialize> IntoResponse for Brest<D, C> {
     fn into_response(self) -> axum::response::Response {
         use axum::Json;
 
@@ -414,8 +400,33 @@ where
     }
 }
 
+#[cfg(feature = "axum")]
+#[derive(Debug)]
+pub enum BrestErr<C = u32> {
+    Error {
+        message: String,
+        code: Option<C>,
+        status: StatusCode,
+    },
+    Fail {
+        message: String,
+        code: Option<C>,
+        status: StatusCode,
+    },
+}
+
+#[cfg(feature = "axum")]
+impl<C, T: Serialize> From<BrestErr<C>> for Brest<T, C> {
+    fn from(err: BrestErr<C>) -> Self {
+        match err {
+            BrestErr::Error { message, code, status } => Brest::Error { message, code, status },
+            BrestErr::Fail { message, code, status } => Brest::Fail { message, code, status },
+        }
+    }
+}
+
 #[cfg(feature = "try")]
-impl<D, C, U> FromResidual<Result<U, Self>> for Brest<D, C> {
+impl<D: Serialize, C, U> FromResidual<Result<U, Self>> for Brest<D, C> {
     fn from_residual(residual: Result<U, Self>) -> Self {
         residual.err().unwrap()
     }
