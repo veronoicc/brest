@@ -9,7 +9,10 @@ use axum::{http::StatusCode, response::IntoResponse};
 #[cfg(feature = "schemars")]
 use schemars::JsonSchema;
 
-use serde::{Deserialize, Serialize, Serializer, ser::SerializeStruct as _};
+#[cfg(feature = "axum")]
+use serde::{Serializer, ser::SerializeStruct as _};
+
+use serde::{Deserialize, Serialize};
 
 use std::fmt::Debug;
 
@@ -81,6 +84,16 @@ impl<D: Serialize, C> Brest<D, C> {
     }
 
     #[cfg(feature = "axum")]
+    pub fn error_status<M: ToString>(message: M, status: StatusCode) -> Self {
+        Self::Error {
+            message: message.to_string(),
+            code: None,
+            #[cfg(feature = "axum")]
+            status,
+        }
+    }
+
+    #[cfg(feature = "axum")]
     pub fn error_code_status<M: ToString>(message: M, code: C, status: StatusCode) -> Self {
         Self::Error {
             message: message.to_string(),
@@ -104,6 +117,15 @@ impl<D: Serialize, C> Brest<D, C> {
             code: Some(code),
             #[cfg(feature = "axum")]
             status: StatusCode::BAD_REQUEST,
+        }
+    }
+
+    #[cfg(feature = "axum")]
+    pub fn fail_status<M: ToString>(message: M, status: StatusCode) -> Self {
+        Self::Fail {
+            message: message.to_string(),
+            code: None,
+            status,
         }
     }
 
