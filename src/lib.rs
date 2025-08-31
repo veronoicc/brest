@@ -16,6 +16,9 @@ use serde::{Deserialize, Serialize};
 
 use std::fmt::Debug;
 
+#[cfg(feature = "axum")]
+pub mod extractors;
+
 #[derive(Debug)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 #[derive(Serialize, Deserialize)]

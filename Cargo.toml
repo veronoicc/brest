@@ -17,7 +17,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 schemars ={ version = "0.8", optional = true }
-axum = { version = "0.8.4",features = ["json"], default-features = false, optional = true}
+axum = { version = "0.8.4",features = ["json", "matched-path", "form", "query", "macros"], default-features = false, optional = true}
 
 [features]
 schemars = ["dep:schemars"]
