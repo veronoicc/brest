@@ -425,6 +425,19 @@ impl<C, T: Serialize> From<BrestErr<C>> for Brest<T, C> {
     }
 }
 
+#[cfg(feature = "axum")]
+impl<C: std::fmt::Debug> std::error::Error for BrestErr<C> {}
+
+#[cfg(feature = "axum")]
+impl<C: std::fmt::Debug> std::fmt::Display for BrestErr<C> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BrestErr::Error { message, .. } => write!(f, "Error: {}", message),
+            BrestErr::Fail { message, .. } => write!(f, "Fail: {}", message),
+        }
+    }
+}
+
 #[cfg(feature = "try")]
 impl<D: Serialize, C, U> FromResidual<Result<U, Self>> for Brest<D, C> {
     fn from_residual(residual: Result<U, Self>) -> Self {
