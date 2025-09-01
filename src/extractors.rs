@@ -9,7 +9,7 @@ use crate::Brest;
 
 #[derive(FromRequest)]
 #[from_request(via(axum::Json), rejection(Brest))]
-pub struct Json<T>(T);
+pub struct Json<T>(pub T);
 
 impl<T: Serialize> IntoResponse for Json<T> {
     fn into_response(self) -> axum::response::Response {
@@ -24,7 +24,15 @@ impl From<JsonRejection> for Brest {
     }
 }
 
-pub struct Bytes(axum::body::Bytes);
+impl<T> Deref for Json<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+pub struct Bytes(pub axum::body::Bytes);
 
 impl<S> axum::extract::FromRequest<S> for Bytes
 where
@@ -58,7 +66,7 @@ impl Deref for Bytes {
 
 #[derive(FromRequest)]
 #[from_request(via(axum::Extension), rejection(Brest))]
-pub struct Extension<T>(T);
+pub struct Extension<T>(pub T);
 
 impl<T> IntoResponse for Extension<T>
 where
@@ -76,9 +84,17 @@ impl From<ExtensionRejection> for Brest {
     }
 }
 
+impl<T> Deref for Extension<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 #[derive(FromRequest)]
 #[from_request(via(axum::Form), rejection(Brest))]
-pub struct Form<T>(T);
+pub struct Form<T>(pub T);
 
 impl<T: Serialize> IntoResponse for Form<T> {
     fn into_response(self) -> axum::response::Response {
@@ -90,6 +106,14 @@ impl<T: Serialize> IntoResponse for Form<T> {
 impl From<FormRejection> for Brest {
     fn from(value: FormRejection) -> Self {
         Brest::fail_status(value.body_text(), value.status())
+    }
+}
+
+impl<T> Deref for Form<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
@@ -122,7 +146,7 @@ impl Deref for MatchedPath {
 
 #[derive(FromRequest)]
 #[from_request(via(axum::extract::Path), rejection(Brest))]
-pub struct Path<T>(T);
+pub struct Path<T>(pub T);
 
 impl From<PathRejection> for Brest {
     fn from(value: PathRejection) -> Self {
@@ -130,13 +154,29 @@ impl From<PathRejection> for Brest {
     }
 }
 
+impl<T> Deref for Path<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 #[derive(FromRequest)]
 #[from_request(via(axum::extract::Query), rejection(Brest))]
-pub struct Query<T>(T);
+pub struct Query<T>(pub T);
 
 impl From<QueryRejection> for Brest {
     fn from(value: QueryRejection) -> Self {
         Brest::fail_status(value.body_text(), value.status())
+    }
+}
+
+impl<T> Deref for Query<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
