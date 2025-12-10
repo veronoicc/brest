@@ -70,6 +70,7 @@ dependencies = [
  "axum",
  "schemars",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
