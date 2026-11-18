@@ -50,6 +50,10 @@ async fn custom_message() -> Result<Brest<u8>, BrestErr> {
     Ok(Brest::success(io_err().message("nope")?))
 }
 
+async fn own_type_fail() -> Result<Brest<u8>, BrestErr> {
+    Ok(Brest::success(teapot().fail()?))
+}
+
 async fn own_type() -> Result<Brest<u8>, BrestErr> {
     Ok(Brest::success(teapot()?))
 }
@@ -82,6 +86,7 @@ async fn call(path: &str) -> (StatusCode, Value) {
         .route("/coded", get(coded))
         .route("/message", get(custom_message))
         .route("/own", get(own_type))
+        .route("/own_fail", get(own_type_fail))
         .route("/ok", get(ok));
     #[cfg(feature = "try")]
     let app = app
@@ -140,6 +145,13 @@ async fn own_type_picks_status() {
     let (status, body) = call("/own").await;
     assert_eq!(status, StatusCode::IM_A_TEAPOT);
     assert_eq!(body, json!({"type": "fail", "message": "short and stout"}));
+}
+
+#[tokio::test]
+async fn fail_keeps_status_of_existing_fail() {
+    let (status, body) = call("/own_fail").await;
+    assert_eq!(status, StatusCode::IM_A_TEAPOT);
+    assert_eq!(body["type"], "fail");
 }
 
 #[tokio::test]

@@ -29,6 +29,9 @@
 //! # fn main() {}
 //! ```
 //!
+//! Errors that do not implement [`std::error::Error`] (`Box<dyn Error + Send + Sync>`,
+//! `anyhow::Error`, `String`) cannot convert implicitly; use `.map_err(BrestErr::error)?`.
+//!
 //! Change status, code or kind at the call site with [`ResultExt`]:
 //!
 //! ```
@@ -538,27 +541,33 @@ impl<C> BrestErr<C> {
         self
     }
 
-    /// Turns into a `Fail` and resets the status to 400.
+    /// Turns into a `Fail`. An existing `Fail` is returned unchanged; an `Error` is rebuilt
+    /// with status 400.
     #[must_use]
     pub fn into_fail(self) -> Self {
-        let (Self::Error { message, code, .. } | Self::Fail { message, code, .. }) = self;
-        Self::Fail {
-            message,
-            code,
-            #[cfg(feature = "axum")]
-            status: StatusCode::BAD_REQUEST,
+        match self {
+            fail @ Self::Fail { .. } => fail,
+            Self::Error { message, code, .. } => Self::Fail {
+                message,
+                code,
+                #[cfg(feature = "axum")]
+                status: StatusCode::BAD_REQUEST,
+            },
         }
     }
 
-    /// Turns into an `Error` and resets the status to 500.
+    /// Turns into an `Error`. An existing `Error` is returned unchanged; a `Fail` is rebuilt
+    /// with status 500.
     #[must_use]
     pub fn into_error(self) -> Self {
-        let (Self::Error { message, code, .. } | Self::Fail { message, code, .. }) = self;
-        Self::Error {
-            message,
-            code,
-            #[cfg(feature = "axum")]
-            status: StatusCode::INTERNAL_SERVER_ERROR,
+        match self {
+            error @ Self::Error { .. } => error,
+            Self::Fail { message, code, .. } => Self::Error {
+                message,
+                code,
+                #[cfg(feature = "axum")]
+                status: StatusCode::INTERNAL_SERVER_ERROR,
+            },
         }
     }
 }
@@ -620,17 +629,23 @@ impl<C: Serialize> IntoResponse for BrestErr<C> {
 
 /// Call-site overrides for `?`; each method returns a `Result<T, BrestErr<C>>` so they chain.
 ///
-/// `fail()` resets the status to 400, so call it before [`status`](ResultExt::status).
-pub trait ResultExt<T, C>: Sized {
+/// `fail()` on an `Error` resets the status to 400, so call it before `status`.
+/// This trait is sealed: it is implemented for every `Result<T, E>` with `E: Into<BrestErr<C>>`.
+pub trait ResultExt<T, C>: sealed::Sealed {
     /// Sets the HTTP status of the resulting error.
     #[cfg(feature = "axum")]
     fn status(self, status: StatusCode) -> Result<T, BrestErr<C>>;
     /// Sets the application error code.
     fn code(self, code: C) -> Result<T, BrestErr<C>>;
-    /// Marks the error as a `Fail` (status 400).
+    /// Marks the error as a `Fail` (status 400 unless it already was a `Fail`).
     fn fail(self) -> Result<T, BrestErr<C>>;
     /// Replaces the error message.
     fn message<M: ToString>(self, message: M) -> Result<T, BrestErr<C>>;
+}
+
+mod sealed {
+    pub trait Sealed {}
+    impl<T, E> Sealed for Result<T, E> {}
 }
 
 impl<T, E: Into<BrestErr<C>>, C> ResultExt<T, C> for Result<T, E> {
