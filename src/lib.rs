@@ -800,9 +800,8 @@ mod tests {
 
         #[test]
         fn test_json_schema() {
-            let schema = schemars::r#gen::SchemaGenerator::default().into_root_schema_for::<Brest<String, u32>>();
-            // Just check that a schema was generated
-            assert!(schema.schema.subschemas.is_some());
+            let schema = schemars::SchemaGenerator::default().into_root_schema_for::<Brest<String, u32>>();
+            assert!(schema.get("oneOf").is_some());
         }
     }
 }
