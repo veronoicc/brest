@@ -1,26 +1,28 @@
 [package]
 name = "brest"
-version = "0.2.2"
-edition = "2021"
+version = "0.3.0"
+edition = "2024"
+rust-version = "1.85"
 description = "Simple response format for web apis"
 authors = ["Vero <veronoicc@proton.me>"]
 license = "BSD-3-Clause"
 documentation = "https://docs.rs/brest/latest/brest"
 repository = "https://github.com/veronoicc/brest"
 
-[package.metadata]
-msrv = "1.56.0"
-
 [package.metadata.docs.rs]
+all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
-schemars ={ version = "0.8", optional = true }
-axum = { version = "0.8",features = ["json", "matched-path", "form", "query", "macros"], default-features = false, optional = true}
+schemars = { version = "1.2", optional = true }
+axum = { version = "0.8", features = ["json", "matched-path", "form", "query", "macros"], default-features = false, optional = true }
 
 [dev-dependencies]
 serde_json = "1.0"
+tokio = { version = "1.54", features = ["macros", "rt"] }
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
 
 [features]
 schemars = ["dep:schemars"]

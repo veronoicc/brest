@@ -1,7 +1,86 @@
-#![cfg_attr(feature = "try", feature(try_trait_v2))]
+//! Simple response format for web apis.
+//!
+//! Every response is one of `{"type":"success","data":..}`, `{"type":"error","message":..}` or
+//! `{"type":"fail","message":..}` (see [`Brest`]).
+//!
+//! # Features
+//!
+//! - `axum`: `IntoResponse` for [`Brest`] and [`BrestErr`], HTTP statuses, and the
+//!   `extractors` module.
+//! - `schemars`: `JsonSchema` for [`Brest`] (schemars 1.x).
+//! - `try`: nightly only. Implements the `?` operator for [`Brest`], so handlers may return
+//!   `Brest<T>` directly. Never enable it on stable.
+//!
+//! # Using `?` in handlers
+//!
+//! Handlers returning `Result<Brest<T>, BrestErr>` accept `?` on any [`std::error::Error`]
+//! (answers `500` with `{"type":"error","message":..}`):
+//!
+//! ```
+//! # #[cfg(feature = "axum")]
+//! # mod example {
+//! use brest::{Brest, BrestErr};
+//!
+//! async fn handler() -> Result<Brest<String>, BrestErr> {
+//!     let text = std::fs::read_to_string("greeting.txt")?;
+//!     Ok(Brest::success(text))
+//! }
+//! # }
+//! # fn main() {}
+//! ```
+//!
+//! Errors that do not implement [`std::error::Error`] (`Box<dyn Error + Send + Sync>`,
+//! `anyhow::Error`, `String`) cannot convert implicitly; use `.map_err(BrestErr::error)?`.
+//!
+//! Change status, code or kind at the call site with [`ResultExt`]:
+//!
+//! ```
+//! # #[cfg(feature = "axum")]
+//! # mod example {
+//! use axum::http::StatusCode;
+//! use brest::{Brest, BrestErr, ResultExt as _};
+//!
+//! async fn handler() -> Result<Brest<String>, BrestErr> {
+//!     let missing = std::fs::read_to_string("greeting.txt").status(StatusCode::NOT_FOUND)?;
+//!     let bad_input = std::fs::read_to_string("other.txt").fail().code(42)?;
+//!     Ok(Brest::success(missing + &bad_input))
+//! }
+//! # }
+//! # fn main() {}
+//! ```
+//!
+//! Your own error types that do not implement [`std::error::Error`] pick their own response
+//! with `impl From<MyErr> for BrestErr`:
+//!
+//! ```
+//! # #[cfg(feature = "axum")]
+//! # mod example {
+//! use axum::http::StatusCode;
+//! use brest::{Brest, BrestErr};
+//!
+//! struct OutOfStock;
+//!
+//! impl From<OutOfStock> for BrestErr {
+//!     fn from(_: OutOfStock) -> Self {
+//!         BrestErr::fail("out of stock").with_status(StatusCode::CONFLICT)
+//!     }
+//! }
+//!
+//! async fn handler() -> Result<Brest<()>, BrestErr> {
+//!     Err(OutOfStock)?
+//! }
+//! # }
+//! # fn main() {}
+//! ```
+//!
+//! With the nightly `try` feature the same `?` works in a handler returning [`Brest`] itself.
+#![cfg_attr(feature = "try", feature(try_trait_v2, try_trait_v2_residual))]
 
 #[cfg(feature = "try")]
-use std::ops::{ControlFlow, FromResidual, Try};
+use std::{
+    convert::Infallible,
+    ops::{ControlFlow, FromResidual, Residual, Try},
+};
 
 #[cfg(feature = "axum")]
 use axum::{http::StatusCode, response::IntoResponse};
@@ -22,10 +101,7 @@ pub mod extractors;
 #[derive(Debug)]
 #[cfg_attr(feature = "schemars", derive(JsonSchema))]
 #[derive(Serialize, Deserialize, PartialEq)]
-#[serde(
-    rename_all = "lowercase",
-    tag = "type"
-)]
+#[serde(rename_all = "lowercase", tag = "type")]
 pub enum Brest<D: Serialize = (), C = u32> {
     Success {
         data: D,
@@ -141,6 +217,28 @@ impl<D: Serialize, C> Brest<D, C> {
 }
 
 impl<D: Serialize, C> Brest<D, C> {
+    /// Sets the HTTP status (any variant).
+    #[cfg(feature = "axum")]
+    #[must_use]
+    pub fn with_status(mut self, status: StatusCode) -> Self {
+        let (Self::Success { status: s, .. }
+        | Self::Error { status: s, .. }
+        | Self::Fail { status: s, .. }) = &mut self;
+        *s = status;
+        self
+    }
+
+    /// Sets the application code. No-op on `Success`, which carries none.
+    #[must_use]
+    pub fn with_code(mut self, code: C) -> Self {
+        if let Self::Error { code: c, .. } | Self::Fail { code: c, .. } = &mut self {
+            *c = Some(code);
+        }
+        self
+    }
+}
+
+impl<D: Serialize, C> Brest<D, C> {
     #[inline]
     #[must_use]
     pub fn is_success(&self) -> bool {
@@ -230,19 +328,9 @@ where
 }
 
 #[cfg(feature = "try")]
-impl<D: Serialize, E, C> FromResidual<Result<D, E>> for Brest<D, C>
-where
-    E: ToString,
-{
-    fn from_residual(residual: Result<D, E>) -> Self {
-        Self::error(residual.err().unwrap().to_string())
-    }
-}
-
-#[cfg(feature = "try")]
 impl<D: Serialize, C> Try for Brest<D, C> {
     type Output = D;
-    type Residual = Brest<(), C>;
+    type Residual = BrestErr<C>;
 
     fn from_output(output: Self::Output) -> Self {
         Self::success(output)
@@ -256,58 +344,46 @@ impl<D: Serialize, C> Try for Brest<D, C> {
                 message,
                 code,
                 status,
-            } => ControlFlow::Break(Brest::Error {
+            } => ControlFlow::Break(BrestErr::Error {
                 message,
                 code,
                 status,
             }),
             #[cfg(not(feature = "axum"))]
-            Brest::Error { message, code } => ControlFlow::Break(Brest::Error { message, code }),
+            Brest::Error { message, code } => ControlFlow::Break(BrestErr::Error { message, code }),
             #[cfg(feature = "axum")]
             Brest::Fail {
                 message,
                 code,
                 status,
-            } => ControlFlow::Break(Brest::Fail {
+            } => ControlFlow::Break(BrestErr::Fail {
                 message,
                 code,
                 status,
             }),
             #[cfg(not(feature = "axum"))]
-            Brest::Fail { message, code } => ControlFlow::Break(Brest::Fail { message, code }),
+            Brest::Fail { message, code } => ControlFlow::Break(BrestErr::Fail { message, code }),
         }
     }
 }
 
 #[cfg(feature = "try")]
-impl<D: Serialize, C> FromResidual<Brest<(), C>> for Brest<D, C> {
-    fn from_residual(residual: Brest<(), C>) -> Self {
+impl<D: Serialize, C> Residual<D> for BrestErr<C> {
+    type TryType = Brest<D, C>;
+}
+
+#[cfg(feature = "try")]
+impl<D: Serialize, C> FromResidual<BrestErr<C>> for Brest<D, C> {
+    fn from_residual(residual: BrestErr<C>) -> Self {
+        residual.into()
+    }
+}
+
+#[cfg(feature = "try")]
+impl<D: Serialize, C, E: Into<BrestErr<C>>> FromResidual<Result<Infallible, E>> for Brest<D, C> {
+    fn from_residual(residual: Result<Infallible, E>) -> Self {
         match residual {
-            Brest::Success { .. } => unreachable!(),
-            #[cfg(feature = "axum")]
-            Brest::Error {
-                message,
-                code,
-                status,
-            } => Brest::Error {
-                message,
-                code,
-                status,
-            },
-            #[cfg(not(feature = "axum"))]
-            Brest::Error { message, code } => Brest::Error { message, code },
-            #[cfg(feature = "axum")]
-            Brest::Fail {
-                message,
-                code,
-                status,
-            } => Brest::Fail {
-                message,
-                code,
-                status,
-            },
-            #[cfg(not(feature = "axum"))]
-            Brest::Fail { message, code } => Brest::Fail { message, code },
+            Err(e) => e.into().into(),
         }
     }
 }
@@ -321,16 +397,6 @@ where
             Ok(data) => Self::success(data),
             Err(error) => Self::error_code(error.to_string(), value.1),
         }
-    }
-}
-
-#[cfg(feature = "try")]
-impl<D: Serialize, E, C> FromResidual<(Result<D, E>, C)> for Brest<D, C>
-where
-    E: ToString,
-{
-    fn from_residual(residual: (Result<D, E>, C)) -> Self {
-        Self::error_code(residual.0.err().unwrap().to_string(), residual.1)
     }
 }
 
@@ -348,31 +414,16 @@ where
     }
 }
 
-#[cfg(all(feature = "try", feature = "axum"))]
-impl<D: Serialize, E, S, C> FromResidual<(Result<D, E>, C, S)> for Brest<D, C>
-where
-    E: ToString,
-    S: Into<StatusCode>,
-{
-    fn from_residual(residual: (Result<D, E>, C, S)) -> Self {
-        Self::error_code_status(
-            residual.0.err().unwrap().to_string(),
-            residual.1,
-            residual.2.into(),
-        )
-    }
-}
-
 impl<D: Serialize, C> From<D> for Brest<D, C> {
     fn from(value: D) -> Self {
         Self::success(value)
     }
 }
 
-#[cfg(all(feature = "axum"))]
+#[cfg(feature = "axum")]
 struct BrestResponse<D: Serialize, C>(Brest<D, C>);
 
-#[cfg(all(feature = "axum"))]
+#[cfg(feature = "axum")]
 impl<D: Serialize + 'static, C: Serialize> Serialize for BrestResponse<D, C> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -407,7 +458,7 @@ impl<D: Serialize + 'static, C: Serialize> Serialize for BrestResponse<D, C> {
     }
 }
 
-#[cfg(all(feature = "axum"))]
+#[cfg(feature = "axum")]
 impl<D: Serialize + 'static, C: Serialize> IntoResponse for Brest<D, C> {
     fn into_response(self) -> axum::response::Response {
         use axum::Json;
@@ -422,55 +473,203 @@ impl<D: Serialize + 'static, C: Serialize> IntoResponse for Brest<D, C> {
     }
 }
 
-#[cfg(feature = "axum")]
+/// Error half of a [`Brest`], built for `?`.
+///
+/// Any [`std::error::Error`] converts into a `BrestErr` (status 500, `type: "error"`), so
+/// `?` works on arbitrary fallible calls inside a handler returning
+/// `Result<Brest<T>, BrestErr>`. Use [`ResultExt`] to change status, code or kind at the call
+/// site. With the nightly `try` feature, handlers may return `Brest<T>` directly.
 #[derive(Debug)]
 pub enum BrestErr<C = u32> {
     Error {
         message: String,
         code: Option<C>,
+        #[cfg(feature = "axum")]
         status: StatusCode,
     },
     Fail {
         message: String,
         code: Option<C>,
+        #[cfg(feature = "axum")]
         status: StatusCode,
     },
 }
 
-#[cfg(feature = "axum")]
+impl<C> BrestErr<C> {
+    /// An `Error` (server side problem), status 500.
+    pub fn error<M: ToString>(message: M) -> Self {
+        Self::Error {
+            message: message.to_string(),
+            code: None,
+            #[cfg(feature = "axum")]
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+
+    /// A `Fail` (caller side problem), status 400.
+    pub fn fail<M: ToString>(message: M) -> Self {
+        Self::Fail {
+            message: message.to_string(),
+            code: None,
+            #[cfg(feature = "axum")]
+            status: StatusCode::BAD_REQUEST,
+        }
+    }
+
+    /// Sets the HTTP status.
+    #[cfg(feature = "axum")]
+    #[must_use]
+    pub fn with_status(mut self, status: StatusCode) -> Self {
+        let (Self::Error { status: s, .. } | Self::Fail { status: s, .. }) = &mut self;
+        *s = status;
+        self
+    }
+
+    /// Sets the application error code.
+    #[must_use]
+    pub fn with_code(mut self, code: C) -> Self {
+        let (Self::Error { code: c, .. } | Self::Fail { code: c, .. }) = &mut self;
+        *c = Some(code);
+        self
+    }
+
+    /// Replaces the message.
+    #[must_use]
+    pub fn with_message<M: ToString>(mut self, message: M) -> Self {
+        let (Self::Error { message: m, .. } | Self::Fail { message: m, .. }) = &mut self;
+        *m = message.to_string();
+        self
+    }
+
+    /// Turns into a `Fail`. An existing `Fail` is returned unchanged; an `Error` is rebuilt
+    /// with status 400.
+    #[must_use]
+    pub fn into_fail(self) -> Self {
+        match self {
+            fail @ Self::Fail { .. } => fail,
+            Self::Error { message, code, .. } => Self::Fail {
+                message,
+                code,
+                #[cfg(feature = "axum")]
+                status: StatusCode::BAD_REQUEST,
+            },
+        }
+    }
+
+    /// Turns into an `Error`. An existing `Error` is returned unchanged; a `Fail` is rebuilt
+    /// with status 500.
+    #[must_use]
+    pub fn into_error(self) -> Self {
+        match self {
+            error @ Self::Error { .. } => error,
+            Self::Fail { message, code, .. } => Self::Error {
+                message,
+                code,
+                #[cfg(feature = "axum")]
+                status: StatusCode::INTERNAL_SERVER_ERROR,
+            },
+        }
+    }
+}
+
+// `BrestErr` deliberately does not implement `std::error::Error`; that is what makes this
+// blanket impl coherent with the reflexive `From<T> for T`.
+impl<C, E: std::error::Error> From<E> for BrestErr<C> {
+    fn from(error: E) -> Self {
+        Self::error(error)
+    }
+}
+
 impl<C, T: Serialize> From<BrestErr<C>> for Brest<T, C> {
     fn from(err: BrestErr<C>) -> Self {
         match err {
-            BrestErr::Error { message, code, status } => Brest::Error { message, code, status },
-            BrestErr::Fail { message, code, status } => Brest::Fail { message, code, status },
+            #[cfg(feature = "axum")]
+            BrestErr::Error {
+                message,
+                code,
+                status,
+            } => Brest::Error {
+                message,
+                code,
+                status,
+            },
+            #[cfg(not(feature = "axum"))]
+            BrestErr::Error { message, code } => Brest::Error { message, code },
+            #[cfg(feature = "axum")]
+            BrestErr::Fail {
+                message,
+                code,
+                status,
+            } => Brest::Fail {
+                message,
+                code,
+                status,
+            },
+            #[cfg(not(feature = "axum"))]
+            BrestErr::Fail { message, code } => Brest::Fail { message, code },
         }
     }
 }
 
-#[cfg(feature = "axum")]
-impl<C: std::fmt::Debug> std::error::Error for BrestErr<C> {}
-
-#[cfg(feature = "axum")]
-impl<C: std::fmt::Debug> std::fmt::Display for BrestErr<C> {
+impl<C> std::fmt::Display for BrestErr<C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BrestErr::Error { message, .. } => write!(f, "Error: {}", message),
-            BrestErr::Fail { message, .. } => write!(f, "Fail: {}", message),
+            BrestErr::Error { message, .. } => write!(f, "Error: {message}"),
+            BrestErr::Fail { message, .. } => write!(f, "Fail: {message}"),
         }
     }
 }
 
-#[cfg(feature = "try")]
-impl<D: Serialize, C, U> FromResidual<Result<U, Self>> for Brest<D, C> {
-    fn from_residual(residual: Result<U, Self>) -> Self {
-        residual.err().unwrap()
+#[cfg(feature = "axum")]
+impl<C: Serialize> IntoResponse for BrestErr<C> {
+    fn into_response(self) -> axum::response::Response {
+        Brest::<(), C>::from(self).into_response()
+    }
+}
+
+/// Call-site overrides for `?`; each method returns a `Result<T, BrestErr<C>>` so they chain.
+///
+/// `fail()` on an `Error` resets the status to 400, so call it before `status`.
+/// This trait is sealed: it is implemented for every `Result<T, E>` with `E: Into<BrestErr<C>>`.
+pub trait ResultExt<T, C>: sealed::Sealed<T, C> {
+    /// Sets the HTTP status of the resulting error.
+    #[cfg(feature = "axum")]
+    fn status(self, status: StatusCode) -> Result<T, BrestErr<C>>;
+    /// Sets the application error code.
+    fn code(self, code: C) -> Result<T, BrestErr<C>>;
+    /// Marks the error as a `Fail` (status 400 unless it already was a `Fail`).
+    fn fail(self) -> Result<T, BrestErr<C>>;
+    /// Replaces the error message.
+    fn message<M: ToString>(self, message: M) -> Result<T, BrestErr<C>>;
+}
+
+mod sealed {
+    pub trait Sealed<T, C> {}
+    impl<T, E: Into<super::BrestErr<C>>, C> Sealed<T, C> for Result<T, E> {}
+}
+
+impl<T, E: Into<BrestErr<C>>, C> ResultExt<T, C> for Result<T, E> {
+    #[cfg(feature = "axum")]
+    fn status(self, status: StatusCode) -> Result<T, BrestErr<C>> {
+        self.map_err(|e| e.into().with_status(status))
+    }
+
+    fn code(self, code: C) -> Result<T, BrestErr<C>> {
+        self.map_err(|e| e.into().with_code(code))
+    }
+
+    fn fail(self) -> Result<T, BrestErr<C>> {
+        self.map_err(|e| e.into().into_fail())
+    }
+
+    fn message<M: ToString>(self, message: M) -> Result<T, BrestErr<C>> {
+        self.map_err(|e| e.into().with_message(message))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json;
 
     #[test]
     fn test_success_construction() {
@@ -537,7 +736,10 @@ mod tests {
     fn test_error_code_serialization() {
         let brest = Brest::<(), u32>::error_code("error message", 500);
         let json = serde_json::to_string(&brest).unwrap();
-        assert_eq!(json, r#"{"type":"error","message":"error message","code":500}"#);
+        assert_eq!(
+            json,
+            r#"{"type":"error","message":"error message","code":500}"#
+        );
     }
 
     #[test]
@@ -551,7 +753,10 @@ mod tests {
     fn test_fail_code_serialization() {
         let brest = Brest::<(), u32>::fail_code("fail message", 400);
         let json = serde_json::to_string(&brest).unwrap();
-        assert_eq!(json, r#"{"type":"fail","message":"fail message","code":400}"#);
+        assert_eq!(
+            json,
+            r#"{"type":"fail","message":"fail message","code":400}"#
+        );
     }
 
     #[test]
@@ -593,7 +798,7 @@ mod tests {
     fn test_is_success_and() {
         let brest = Brest::<i32, u32>::success(42);
         assert!(brest.is_success_and(|x| x == 42));
-        
+
         let brest2 = Brest::<i32, u32>::success(42);
         assert!(!brest2.is_success_and(|x| x == 0));
     }
@@ -602,7 +807,7 @@ mod tests {
     fn test_is_error_and() {
         let brest = Brest::<(), u32>::error_code("test", 500);
         assert!(brest.is_error_and(|fields| fields.message == "test" && fields.code == Some(500)));
-        
+
         let brest2 = Brest::<(), u32>::error_code("test", 500);
         assert!(!brest2.is_error_and(|fields| fields.code == Some(400)));
     }
@@ -611,7 +816,7 @@ mod tests {
     fn test_is_fail_and() {
         let brest = Brest::<(), u32>::fail_code("test", 400);
         assert!(brest.is_fail_and(|fields| fields.message == "test" && fields.code == Some(400)));
-        
+
         let brest2 = Brest::<(), u32>::fail_code("test", 400);
         assert!(!brest2.is_fail_and(|fields| fields.code == Some(500)));
     }
@@ -658,7 +863,7 @@ mod tests {
         #[test]
         fn test_try_success() {
             let brest = Brest::<i32, u32>::success(42);
-            let result: ControlFlow<Brest<(), u32>, i32> = brest.branch();
+            let result: ControlFlow<BrestErr<u32>, i32> = brest.branch();
             match result {
                 ControlFlow::Continue(val) => assert_eq!(val, 42),
                 _ => panic!("Expected Continue"),
@@ -668,29 +873,29 @@ mod tests {
         #[test]
         fn test_try_error() {
             let brest = Brest::<i32, u32>::error("test error");
-            let result: ControlFlow<Brest<(), u32>, i32> = brest.branch();
+            let result: ControlFlow<BrestErr<u32>, i32> = brest.branch();
             assert!(result.is_break());
         }
 
         #[test]
         fn test_try_fail() {
             let brest = Brest::<i32, u32>::fail("test fail");
-            let result: ControlFlow<Brest<(), u32>, i32> = brest.branch();
+            let result: ControlFlow<BrestErr<u32>, i32> = brest.branch();
             assert!(result.is_break());
         }
 
         #[test]
         fn test_from_residual() {
-            let residual = Brest::<(), u32>::error("residual");
+            let residual = BrestErr::<u32>::error("residual");
             let brest: Brest<i32, u32> = Brest::from_residual(residual);
             assert!(brest.is_error());
         }
 
         #[test]
-        fn test_from_residual_with_code() {
-            let residual = (Err("residual".to_string()), 500u32);
+        fn test_from_result_residual() {
+            let residual: Result<Infallible, BrestErr<u32>> = Err(BrestErr::fail("residual"));
             let brest: Brest<i32, u32> = Brest::from_residual(residual);
-            assert!(brest.is_error());
+            assert!(brest.is_fail());
         }
     }
 
@@ -701,7 +906,8 @@ mod tests {
 
         #[test]
         fn test_success_status() {
-            let brest = Brest::<String, u32>::success_status("data".to_string(), StatusCode::CREATED);
+            let brest =
+                Brest::<String, u32>::success_status("data".to_string(), StatusCode::CREATED);
             assert!(brest.is_success());
         }
 
@@ -731,14 +937,19 @@ mod tests {
 
         #[test]
         fn test_from_result_with_status_ok() {
-            let result: (Result<String, String>, u32, StatusCode) = (Ok("success".to_string()), 200, StatusCode::OK);
+            let result: (Result<String, String>, u32, StatusCode) =
+                (Ok("success".to_string()), 200, StatusCode::OK);
             let brest: Brest<String, u32> = result.into();
             assert!(brest.is_success());
         }
 
         #[test]
         fn test_from_result_with_status_err() {
-            let result: (Result<String, String>, u32, StatusCode) = (Err("error".to_string()), 500, StatusCode::INTERNAL_SERVER_ERROR);
+            let result: (Result<String, String>, u32, StatusCode) = (
+                Err("error".to_string()),
+                500,
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
             let brest: Brest<String, u32> = result.into();
             assert!(brest.is_error());
         }
@@ -800,9 +1011,9 @@ mod tests {
 
         #[test]
         fn test_json_schema() {
-            let schema = schemars::gen::SchemaGenerator::default().into_root_schema_for::<Brest<String, u32>>();
-            // Just check that a schema was generated
-            assert!(schema.schema.subschemas.is_some());
+            let schema =
+                schemars::SchemaGenerator::default().into_root_schema_for::<Brest<String, u32>>();
+            assert!(schema.get("oneOf").is_some());
         }
     }
 }
