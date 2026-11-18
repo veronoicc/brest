@@ -631,7 +631,7 @@ impl<C: Serialize> IntoResponse for BrestErr<C> {
 ///
 /// `fail()` on an `Error` resets the status to 400, so call it before `status`.
 /// This trait is sealed: it is implemented for every `Result<T, E>` with `E: Into<BrestErr<C>>`.
-pub trait ResultExt<T, C>: sealed::Sealed {
+pub trait ResultExt<T, C>: sealed::Sealed<T, C> {
     /// Sets the HTTP status of the resulting error.
     #[cfg(feature = "axum")]
     fn status(self, status: StatusCode) -> Result<T, BrestErr<C>>;
@@ -644,8 +644,8 @@ pub trait ResultExt<T, C>: sealed::Sealed {
 }
 
 mod sealed {
-    pub trait Sealed {}
-    impl<T, E> Sealed for Result<T, E> {}
+    pub trait Sealed<T, C> {}
+    impl<T, E: Into<super::BrestErr<C>>, C> Sealed<T, C> for Result<T, E> {}
 }
 
 impl<T, E: Into<BrestErr<C>>, C> ResultExt<T, C> for Result<T, E> {
