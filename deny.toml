@@ -1,0 +1,22 @@
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+ignore = [
+    # Transitive via futures-util (axum); unmaintained, no replacement upstream yet.
+    { id = "RUSTSEC-2026-0441", reason = "pin-utils is pulled in by futures-util via axum; no fix available" },
+]
+
+[licenses]
+version = 2
+allow = ["MIT", "Apache-2.0", "BSD-3-Clause", "Unicode-3.0"]
+confidence-threshold = 0.8
+
+[bans]
+multiple-versions = "warn"
+highlight = "all"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
