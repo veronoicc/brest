@@ -1,7 +1,9 @@
 use std::ops::Deref;
 
+use axum::extract::rejection::{
+    ExtensionRejection, FormRejection, JsonRejection, PathRejection, QueryRejection,
+};
 use axum::extract::{FromRequest, Request};
-use axum::extract::rejection::{ExtensionRejection, FormRejection, JsonRejection, PathRejection, QueryRejection};
 use axum::response::IntoResponse;
 use serde::Serialize;
 
@@ -48,8 +50,7 @@ where
     }
 }
 
-impl IntoResponse for Bytes
-{
+impl IntoResponse for Bytes {
     fn into_response(self) -> axum::response::Response {
         let Self(value) = self;
         value.into_response()
