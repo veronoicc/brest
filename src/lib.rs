@@ -1,3 +1,76 @@
+//! Simple response format for web apis.
+//!
+//! Every response is one of `{"type":"success","data":..}`, `{"type":"error","message":..}` or
+//! `{"type":"fail","message":..}` (see [`Brest`]).
+//!
+//! # Features
+//!
+//! - `axum`: `IntoResponse` for [`Brest`] and [`BrestErr`], HTTP statuses, and the
+//!   `extractors` module.
+//! - `schemars`: `JsonSchema` for [`Brest`] (schemars 1.x).
+//! - `try`: nightly only. Implements the `?` operator for [`Brest`], so handlers may return
+//!   `Brest<T>` directly. Never enable it on stable.
+//!
+//! # Using `?` in handlers
+//!
+//! Handlers returning `Result<Brest<T>, BrestErr>` accept `?` on any [`std::error::Error`]
+//! (answers `500` with `{"type":"error","message":..}`):
+//!
+//! ```
+//! # #[cfg(feature = "axum")]
+//! # mod example {
+//! use brest::{Brest, BrestErr};
+//!
+//! async fn handler() -> Result<Brest<String>, BrestErr> {
+//!     let text = std::fs::read_to_string("greeting.txt")?;
+//!     Ok(Brest::success(text))
+//! }
+//! # }
+//! # fn main() {}
+//! ```
+//!
+//! Change status, code or kind at the call site with [`ResultExt`]:
+//!
+//! ```
+//! # #[cfg(feature = "axum")]
+//! # mod example {
+//! use axum::http::StatusCode;
+//! use brest::{Brest, BrestErr, ResultExt as _};
+//!
+//! async fn handler() -> Result<Brest<String>, BrestErr> {
+//!     let missing = std::fs::read_to_string("greeting.txt").status(StatusCode::NOT_FOUND)?;
+//!     let bad_input = std::fs::read_to_string("other.txt").fail().code(42)?;
+//!     Ok(Brest::success(missing + &bad_input))
+//! }
+//! # }
+//! # fn main() {}
+//! ```
+//!
+//! Your own error types that do not implement [`std::error::Error`] pick their own response
+//! with `impl From<MyErr> for BrestErr`:
+//!
+//! ```
+//! # #[cfg(feature = "axum")]
+//! # mod example {
+//! use axum::http::StatusCode;
+//! use brest::{Brest, BrestErr};
+//!
+//! struct OutOfStock;
+//!
+//! impl From<OutOfStock> for BrestErr {
+//!     fn from(_: OutOfStock) -> Self {
+//!         BrestErr::fail("out of stock").with_status(StatusCode::CONFLICT)
+//!     }
+//! }
+//!
+//! async fn handler() -> Result<Brest<()>, BrestErr> {
+//!     Err(OutOfStock)?
+//! }
+//! # }
+//! # fn main() {}
+//! ```
+//!
+//! With the nightly `try` feature the same `?` works in a handler returning [`Brest`] itself.
 #![cfg_attr(feature = "try", feature(try_trait_v2, try_trait_v2_residual))]
 
 #[cfg(feature = "try")]
